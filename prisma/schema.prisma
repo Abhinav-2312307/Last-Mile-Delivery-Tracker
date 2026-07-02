@@ -1,0 +1,428 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  AGENT
+  MANAGER
+  ADMIN
+}
+
+enum OrderType {
+  B2B
+  B2C
+}
+
+enum PaymentType {
+  PREPAID
+  COD
+}
+
+enum PaymentStatus {
+  NOT_REQUIRED
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  PAYMENT_PENDING
+  PAID
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  RESCHEDULE_REQUESTED
+  PENDING_REASSIGNMENT
+  CANCELLED
+}
+
+enum RouteType {
+  INTRA_ZONE
+  INTER_ZONE
+  INTERNATIONAL
+}
+
+enum AgentAvailability {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  SKIPPED
+  FAILED
+}
+
+enum RescheduleStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+model User {
+  id                String                  @id @default(cuid())
+  name              String
+  email             String                  @unique
+  phone             String?
+  passwordHash      String?
+  emailVerified     DateTime?
+  image             String?
+  role              Role                    @default(CUSTOMER)
+  isActive          Boolean                 @default(true)
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  agentProfile      AgentProfile?
+  addresses         Address[]
+  customerOrders    Order[]                 @relation("CustomerOrders")
+  createdOrders     Order[]                 @relation("CreatedOrders")
+  assignedOrders    Order[]                 @relation("AssignedOrders")
+  trackingEvents    TrackingEvent[]
+  notifications     Notification[]
+  reschedules       RescheduleRequest[]
+  accounts          Account[]
+  sessions          Session[]
+  verificationCodes EmailVerificationCode[]
+}
+
+model Country {
+  id        String   @id @default(cuid())
+  name      String
+  isoCode   String   @unique
+  states    State[]
+  cities    City[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model State {
+  id        String   @id @default(cuid())
+  name      String
+  isoCode   String
+  countryId String
+  country   Country  @relation(fields: [countryId], references: [id])
+  cities    City[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([countryId, isoCode])
+}
+
+model City {
+  id        String   @id @default(cuid())
+  name      String
+  countryId String
+  country   Country  @relation(fields: [countryId], references: [id])
+  stateId   String?
+  state     State?   @relation(fields: [stateId], references: [id])
+  areas     Area[]
+  zones     Zone[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([countryId, name])
+}
+
+model Zone {
+  id           String      @id @default(cuid())
+  name         String
+  code         String      @unique
+  cityId       String
+  city         City        @relation(fields: [cityId], references: [id])
+  areas        Area[]
+  agents       ZoneAgent[]
+  pickupOrders Order[]     @relation("PickupZone")
+  dropOrders   Order[]     @relation("DropZone")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+}
+
+model Area {
+  id        String    @id @default(cuid())
+  name      String
+  pincode   String?
+  latitude  Decimal   @db.Decimal(10, 7)
+  longitude Decimal   @db.Decimal(10, 7)
+  cityId    String
+  zoneId    String
+  city      City      @relation(fields: [cityId], references: [id])
+  zone      Zone      @relation(fields: [zoneId], references: [id])
+  addresses Address[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@unique([cityId, name])
+  @@index([zoneId])
+}
+
+model Address {
+  id           String   @id @default(cuid())
+  label        String
+  line1        String
+  line2        String?
+  countryCode  String   @default("")
+  stateCode    String   @default("")
+  cityName     String   @default("")
+  postalCode   String   @default("")
+  contactName  String
+  contactPhone String
+  userId       String?
+  areaId       String
+  latitude     Decimal  @db.Decimal(10, 7)
+  longitude    Decimal  @db.Decimal(10, 7)
+  user         User?    @relation(fields: [userId], references: [id])
+  area         Area     @relation(fields: [areaId], references: [id])
+  pickupOrders Order[]  @relation("PickupAddress")
+  dropOrders   Order[]  @relation("DropAddress")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model RateCard {
+  id            String    @id @default(cuid())
+  name          String
+  orderType     OrderType
+  routeType     RouteType
+  pricePerKg    Decimal   @db.Decimal(10, 2)
+  minimumCharge Decimal   @db.Decimal(10, 2)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([orderType, routeType, name])
+  @@index([orderType, routeType, isActive])
+}
+
+model InternationalRateCard {
+  id                     String    @id @default(cuid())
+  name                   String
+  originCountryCode      String
+  destinationCountryCode String
+  orderType              OrderType
+  pricePerKg             Decimal   @db.Decimal(10, 2)
+  minimumCharge          Decimal   @db.Decimal(10, 2)
+  isActive               Boolean   @default(true)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  @@unique([originCountryCode, destinationCountryCode, orderType], map: "IntlRate_country_pair_order_key")
+  @@index([originCountryCode, destinationCountryCode, orderType, isActive], map: "IntlRate_country_pair_active_idx")
+}
+
+model CodSurcharge {
+  id        String    @id @default(cuid())
+  orderType OrderType @unique
+  amount    Decimal   @db.Decimal(10, 2)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model AgentProfile {
+  id               String            @id @default(cuid())
+  userId           String            @unique
+  employeeCode     String            @unique
+  availability     AgentAvailability @default(OFFLINE)
+  currentLatitude  Decimal?          @db.Decimal(10, 7)
+  currentLongitude Decimal?          @db.Decimal(10, 7)
+  maxActiveOrders  Int               @default(8)
+  user             User              @relation(fields: [userId], references: [id])
+  zones            ZoneAgent[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model ZoneAgent {
+  id             String       @id @default(cuid())
+  zoneId         String
+  agentProfileId String
+  zone           Zone         @relation(fields: [zoneId], references: [id])
+  agentProfile   AgentProfile @relation(fields: [agentProfileId], references: [id])
+  createdAt      DateTime     @default(now())
+
+  @@unique([zoneId, agentProfileId])
+}
+
+model Order {
+  id                 String              @id @default(cuid())
+  orderNumber        String              @unique
+  customerId         String
+  createdById        String
+  assignedAgentId    String?
+  pickupAddressId    String
+  dropAddressId      String
+  pickupZoneId       String
+  dropZoneId         String
+  orderType          OrderType
+  paymentType        PaymentType
+  paymentStatus      PaymentStatus       @default(PENDING)
+  status             OrderStatus         @default(CONFIRMED)
+  lengthCm           Decimal             @db.Decimal(10, 2)
+  breadthCm          Decimal             @db.Decimal(10, 2)
+  heightCm           Decimal             @db.Decimal(10, 2)
+  actualWeightKg     Decimal             @db.Decimal(10, 3)
+  volumetricWeightKg Decimal             @db.Decimal(10, 3)
+  billableWeightKg   Decimal             @db.Decimal(10, 3)
+  routeType          RouteType
+  baseCharge         Decimal             @db.Decimal(10, 2)
+  codSurcharge       Decimal             @db.Decimal(10, 2)
+  totalCharge        Decimal             @db.Decimal(10, 2)
+  rateCardSnapshot   Json
+  customer           User                @relation("CustomerOrders", fields: [customerId], references: [id])
+  createdBy          User                @relation("CreatedOrders", fields: [createdById], references: [id])
+  assignedAgent      User?               @relation("AssignedOrders", fields: [assignedAgentId], references: [id])
+  pickupAddress      Address             @relation("PickupAddress", fields: [pickupAddressId], references: [id])
+  dropAddress        Address             @relation("DropAddress", fields: [dropAddressId], references: [id])
+  pickupZone         Zone                @relation("PickupZone", fields: [pickupZoneId], references: [id])
+  dropZone           Zone                @relation("DropZone", fields: [dropZoneId], references: [id])
+  trackingEvents     TrackingEvent[]
+  payments           Payment[]
+  reschedules        RescheduleRequest[]
+  notifications      Notification[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([status])
+  @@index([pickupZoneId])
+  @@index([dropZoneId])
+  @@index([assignedAgentId])
+  @@index([createdAt])
+}
+
+model TrackingEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  status    OrderStatus
+  note      String?
+  actorId   String
+  actorRole Role
+  metadata  Json?
+  order     Order       @relation(fields: [orderId], references: [id])
+  actor     User        @relation(fields: [actorId], references: [id])
+  createdAt DateTime    @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  orderId           String
+  provider          String
+  providerOrderId   String?       @unique
+  providerPaymentId String?
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("INR")
+  status            PaymentStatus @default(PENDING)
+  rawResponse       Json?
+  order             Order         @relation(fields: [orderId], references: [id])
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([orderId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model EmailVerificationCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int       @default(0)
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model RescheduleRequest {
+  id            String           @id @default(cuid())
+  orderId       String
+  requestedById String
+  requestedDate DateTime
+  note          String?
+  status        RescheduleStatus @default(REQUESTED)
+  order         Order            @relation(fields: [orderId], references: [id])
+  requestedBy   User             @relation(fields: [requestedById], references: [id])
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([orderId])
+}
+
+model Notification {
+  id                String              @id @default(cuid())
+  orderId           String?
+  recipientUserId   String?
+  channel           NotificationChannel
+  status            NotificationStatus  @default(PENDING)
+  subject           String?
+  message           String
+  provider          String?
+  providerMessageId String?
+  error             String?
+  sentAt            DateTime?
+  order             Order?              @relation(fields: [orderId], references: [id])
+  recipientUser     User?               @relation(fields: [recipientUserId], references: [id])
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([orderId])
+  @@index([recipientUserId])
+  @@index([status])
+}

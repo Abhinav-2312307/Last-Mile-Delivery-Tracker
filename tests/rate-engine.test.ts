@@ -90,4 +90,37 @@ describe("calculateDeliveryCharge", () => {
       }),
     ).toThrow("No active rate card found for B2C INTER_ZONE");
   });
+
+  it("uses a country-pair rate for an international route", () => {
+    const quote = calculateDeliveryCharge({
+      pickupCountryCode: "IN",
+      dropCountryCode: "US",
+      pickupZoneId: "delhi",
+      dropZoneId: "new-york",
+      lengthCm: 50,
+      breadthCm: 40,
+      heightCm: 30,
+      actualWeightKg: 5,
+      orderType: "B2C",
+      paymentType: "PREPAID",
+      rateCards,
+      internationalRateCards: [
+        {
+          id: "in-us-b2c",
+          originCountryCode: "IN",
+          destinationCountryCode: "US",
+          orderType: "B2C",
+          pricePerKg: 900,
+          minimumCharge: 2500,
+        },
+      ],
+      codSurcharges,
+    });
+
+    expect(quote.routeType).toBe("INTERNATIONAL");
+    expect(quote.rateCardId).toBe("in-us-b2c");
+    expect(quote.billableWeightKg).toBe(12);
+    expect(quote.baseCharge).toBe(10800);
+    expect(quote.codSurcharge).toBe(0);
+  });
 });

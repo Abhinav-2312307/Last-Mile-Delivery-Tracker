@@ -1,6 +1,6 @@
 export type OrderType = "B2B" | "B2C";
 export type PaymentType = "PREPAID" | "COD";
-export type RouteType = "INTRA_ZONE" | "INTER_ZONE";
+export type RouteType = "INTRA_ZONE" | "INTER_ZONE" | "INTERNATIONAL";
 
 export type RateCardInput = {
   id: string;
@@ -15,9 +15,20 @@ export type CodSurchargeInput = {
   amount: number;
 };
 
+export type InternationalRateCardInput = {
+  id: string;
+  originCountryCode: string;
+  destinationCountryCode: string;
+  orderType: OrderType;
+  pricePerKg: number;
+  minimumCharge: number;
+};
+
 export type DeliveryChargeInput = {
   pickupZoneId: string;
   dropZoneId: string;
+  pickupCountryCode?: string;
+  dropCountryCode?: string;
   lengthCm: number;
   breadthCm: number;
   heightCm: number;
@@ -25,6 +36,7 @@ export type DeliveryChargeInput = {
   orderType: OrderType;
   paymentType: PaymentType;
   rateCards: readonly RateCardInput[];
+  internationalRateCards?: readonly InternationalRateCardInput[];
   codSurcharges: readonly CodSurchargeInput[];
 };
 
@@ -45,17 +57,32 @@ const roundWeight = (value: number) => Math.round(value * 1000) / 1000;
 export function calculateDeliveryCharge(
   input: DeliveryChargeInput,
 ): DeliveryChargeQuote {
-  const routeType: RouteType =
-    input.pickupZoneId === input.dropZoneId ? "INTRA_ZONE" : "INTER_ZONE";
+  const isInternational =
+    Boolean(input.pickupCountryCode) &&
+    Boolean(input.dropCountryCode) &&
+    input.pickupCountryCode !== input.dropCountryCode;
+  const routeType: RouteType = isInternational
+    ? "INTERNATIONAL"
+    : input.pickupZoneId === input.dropZoneId
+      ? "INTRA_ZONE"
+      : "INTER_ZONE";
   const volumetricWeightKg = roundWeight(
     (input.lengthCm * input.breadthCm * input.heightCm) / 5000,
   );
   const billableWeightKg = Math.max(input.actualWeightKg, volumetricWeightKg);
-  const rateCard = input.rateCards.find(
-    (candidate) =>
-      candidate.orderType === input.orderType &&
-      candidate.routeType === routeType,
-  );
+  const rateCard =
+    routeType === "INTERNATIONAL"
+      ? input.internationalRateCards?.find(
+          (candidate) =>
+            candidate.orderType === input.orderType &&
+            candidate.originCountryCode === input.pickupCountryCode &&
+            candidate.destinationCountryCode === input.dropCountryCode,
+        )
+      : input.rateCards.find(
+          (candidate) =>
+            candidate.orderType === input.orderType &&
+            candidate.routeType === routeType,
+        );
 
   if (!rateCard) {
     throw new Error(
