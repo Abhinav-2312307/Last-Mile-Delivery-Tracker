@@ -1,67 +1,67 @@
 # Evaluator Walkthrough & Testing Scenarios
 
-This document outlines the step-by-step testing scenarios designed to show off the key capabilities of the Last-Mile Delivery Tracker. Use the tester accounts listed below to complete the flows.
+This document outlines the step-by-step testing scenarios designed to show off the key capabilities of the Last-Mile Delivery Tracker.
 
 ---
 
-## 🔑 Tester Accounts Cheat Sheet
+## 🔑 Core Tester Accounts
 
 | Role | Email | Password | Role Purpose |
 | :--- | :--- | :--- | :--- |
 | **Customer** | `customer@lastmile.test` | `Customer@12345` | Place orders and pay. |
 | **Manager** | `manager@lastmile.test` | `Manager@12345` | Dispatch/assign orders to agents. |
-| **Agent** | `agent.delhi@lastmile.test` | `Agent@12345` | Handle pick-up and delivery. |
 | **Admin** | `admin@lastmile.test` | `Admin@12345` | Manage configurations & view stats. |
 
 ---
 
-## 🚦 Step-by-Step Testing Walkthrough
+## 📍 50 Major Cities Agent Accounts
 
-### Scenario 1: Booking a Parcel (Customer Flow)
-1. Navigate to the login page (`/login`) and log in using the **Customer** credentials:
-   - **Email**: `customer@lastmile.test`
-   - **Password**: `Customer@12345`
-2. Click on **Book New Order** from the sidebar or dashboard.
-3. Fill out the order form:
-   - Select **Order Type** (B2C or B2B) and **Payment Type** (COD or Prepaid).
-   - Enter pickup and drop-off addresses. Note how the **Pricing Estimate** dynamically updates on the right side of the screen when weight and dimensions are typed in.
-4. If **Prepaid** was chosen, clicking submit will launch the **Razorpay Checkout Overlay** in test mode:
-   - Use any test card numbers or mock credentials provided by the overlay.
-   - Complete the mock payment to proceed.
-5. If **COD** was chosen, the order is submitted immediately.
-6. Copy the generated **Reference ID** (e.g. `LM-XXXXXX`) from your success screen or order history.
+We have pre-seeded agent accounts for **50 major cities across India**. You can log in as any of these agents to manage deliveries in their respective cities.
 
----
+* **Password for all Agent Accounts:** `Agent@12345`
+* **Agent Email Format:** `agent.<cityname_lowercase>@lastmile.test` (remove spaces/hyphens from city name)
 
-### Scenario 2: Assigning a Courier (Manager Flow)
-1. Logout of the customer portal and navigate to `/login`. Log in using the **Manager** credentials:
-   - **Email**: `manager@lastmile.test`
-   - **Password**: `Manager@12345`
-2. Go to the **Dispatch Console**.
-3. Locate the order you created in Scenario 1.
-4. Click **Assign Agent**. Select **Luffy** (the Delhi agent) or any available local agent from the drop-down menu and confirm.
-5. The order status changes to `ASSIGNED`.
+### Examples of Agent Accounts:
+1. **Kanpur Agent**: `agent.kanpur@lastmile.test`
+2. **Lucknow Agent**: `agent.lucknow@lastmile.test`
+3. **Bengaluru Agent**: `agent.bengaluru@lastmile.test`
+4. **Patna Agent**: `agent.patna@lastmile.test`
+5. **Pune Agent**: `agent.pune@lastmile.test`
+6. **Hyderabad Agent**: `agent.hyderabad@lastmile.test`
+7. **Ahmedabad Agent**: `agent.ahmedabad@lastmile.test`
+8. **Chennai Agent**: `agent.chennai@lastmile.test`
+9. **Kolkata Agent**: `agent.kolkata@lastmile.test`
+*(And 41 other major cities seeded in the database. See the full list in the README)*
 
 ---
 
-### Scenario 3: Pick-up and Delivery (Agent Flow)
-1. Logout of the manager console. Log in using the **Agent** credentials:
-   - **Email**: `agent.delhi@lastmile.test`
-   - **Password**: `Agent@12345`
-2. Go to the **Active Deliveries** section.
-3. You will see the assigned order from Scenario 2.
-4. Click **Mark Picked Up** (changes status to `PICKED_UP`).
-5. Click **In Transit** (changes status to `IN_TRANSIT`).
-6. Click **Out For Delivery** (changes status to `OUT_FOR_DELIVERY`).
-7. Finally, click **Mark Delivered** (changes status to `DELIVERED`).
+## 🚦 Step-by-Step Testing Walkthroughs
+
+### Scenario 1: Local Booking & Auto-Assignment (Kanpur to Lucknow)
+This scenario demonstrates how the system dynamically handles deliveries between arbitrary locations and automatically routes them to the nearest delivery agent/station.
+
+1. **Book the Order (Customer)**:
+   - Log in to `/login` using the Customer account: `customer@lastmile.test` / `Customer@12345`.
+   - Go to **Book New Order**.
+   - Set **Pickup Address** in **Kanpur** (select area `Kanpur Central`) and **Delivery Address** in **Lucknow** (select area `Lucknow Central`).
+   - Notice that the distance and volumetric weight calculations automatically compute the pricing.
+   - Choose **COD** or **Prepaid** and submit. Copy the reference `LM-XXXXXX`.
+2. **Auto-Assign to Nearest Agent (Manager)**:
+   - Log in to `/login` as the Manager: `manager@lastmile.test` / `Manager@12345`.
+   - Navigate to the **Dispatch Console** and find the new order.
+   - Click the **Auto** assign button next to the order.
+   - The engine automatically calculates the distance from the order's pickup coordinates (Kanpur) to all active agents. Since `agent.kanpur` is right at the pickup center (0 km away) while other agents are in Lucknow (70 km away) or Delhi (400 km away), it automatically assigns the order to **Kanpur Agent**.
+3. **Delivery Dispatch (Agent)**:
+   - Log in to `/login` using the Kanpur Agent account: `agent.kanpur@lastmile.test` / `Agent@12345`.
+   - You will see the assignment immediately reflected on your dashboard.
+   - Update the status sequence (`PICKED_UP` ➔ `IN_TRANSIT` ➔ `OUT_FOR_DELIVERY` ➔ `DELIVERED`).
 
 ---
 
-### Scenario 4: Guest Tracking & Admin Controls
-1. Go to the main landing page (`/`).
-2. Paste the **Reference ID** (e.g., `LM-XXXXXX`) from Scenario 1 into the tracking search bar and click **Track Package**.
-3. You will see a detailed real-time tracking timeline containing all transitions:
-   - When the order was created
-   - When it was assigned by the manager
-   - Every status update completed by the delivery agent (complete with exact timestamps).
-4. Log in as the **Admin** (`admin@lastmile.test` / `Admin@12345`) to view the overall system dashboard displaying total revenue, active agents count, pending approvals, and options to modify rate cards.
+### Scenario 2: Public Tracking Verification
+1. Logout of all portals and go to the home landing page (`/`).
+2. Paste the **Reference ID** (e.g. `LM-XXXXXX`) into the tracking search bar and click **Track Package**.
+3. The tracking details will render an audit timeline showing:
+   - Order confirmation
+   - Auto-assignment by manager to the Kanpur agent
+   - Exact timestamps for pickup, transit, and delivery events updated by the agent.
