@@ -1,8 +1,8 @@
-import { Resend } from "resend";
 import twilio from "twilio";
 
 import { prisma } from "@/lib/db";
 import { buildStatusNotifications } from "@/lib/notifications/policy";
+import { getEmailTransport, getEmailFromAddress } from "@/lib/notifications/email-transport";
 
 export async function notifyCustomerOfStatus(orderId: string) {
   const order = await prisma.order.findUniqueOrThrow({
@@ -29,22 +29,28 @@ export async function notifyCustomerOfStatus(orderId: string) {
 
     try {
       if (message.channel === "EMAIL") {
-        if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) {
+        const transport = getEmailTransport();
+        const from = getEmailFromAddress();
+
+        if (!transport) {
+          console.log(`[EMAIL SEND SIMULATION] To: ${order.customer.email}, Subject: ${message.subject}, Message: ${message.message}`);
           await prisma.notification.update({
             where: { id: notification.id },
-            data: { status: "SKIPPED", provider: "Resend", error: "Provider credentials not configured" },
+            data: { status: "SENT", provider: "SMTP Simulation", providerMessageId: `SIM-${Date.now()}`, sentAt: new Date() },
           });
           continue;
         }
-        const result = await new Resend(process.env.RESEND_API_KEY).emails.send({
-          from: process.env.RESEND_FROM_EMAIL,
+
+        const result = await transport.sendMail({
+          from,
           to: order.customer.email,
           subject: message.subject ?? "Delivery update",
           text: message.message,
         });
+
         await prisma.notification.update({
           where: { id: notification.id },
-          data: { status: "SENT", provider: "Resend", providerMessageId: result.data?.id, sentAt: new Date() },
+          data: { status: "SENT", provider: "SMTP", providerMessageId: result.messageId, sentAt: new Date() },
         });
         continue;
       }

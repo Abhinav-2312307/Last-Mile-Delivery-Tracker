@@ -1,42 +1,79 @@
-import { ArrowRight, Bike } from "lucide-react";
 import Link from "next/link";
+import { Compass, CheckCircle2, Navigation, Map, Key } from "lucide-react";
 
-import { updateAvailability } from "@/app/(dashboard)/agent/actions";
-import { StatCard } from "@/components/dashboard/stat-card";
-import { StatusBadge } from "@/components/order/status-badge";
-import { requireSession } from "@/lib/auth/session";
-import { prisma } from "@/lib/db";
-
-export default async function AgentDashboard() {
-  const session = await requireSession(["AGENT"]);
-  const [profile, orders] = await Promise.all([
-    prisma.agentProfile.findUniqueOrThrow({ where: { userId: session.user.id } }),
-    prisma.order.findMany({
-      where: { assignedAgentId: session.user.id, status: { notIn: ["DELIVERED", "CANCELLED"] } },
-      include: {
-        customer: true,
-        pickupAddress: { include: { area: { include: { city: true } } } },
-        dropAddress: { include: { area: { include: { city: true } } } },
-      },
-      orderBy: { updatedAt: "desc" },
-    }),
-  ]);
+export default function AgentLanding() {
   return (
-    <>
-      <div className="page-heading"><div><p className="eyebrow">Agent portal</p><h1>My assignments</h1><p>Pickup, transit, and delivery actions for your route.</p></div>
-        <form action={updateAvailability} className="compact-form"><select name="availability" defaultValue={profile.availability}><option>AVAILABLE</option><option>BUSY</option><option>OFFLINE</option></select><button className="button button-secondary">Update</button></form>
-      </div>
-      <section className="stats-grid">
-        <StatCard label="Assigned" value={orders.length} detail="Open workload" />
-        <StatCard label="Ready for pickup" value={orders.filter((o) => o.status === "ASSIGNED").length} />
-        <StatCard label="On route" value={orders.filter((o) => ["PICKED_UP", "IN_TRANSIT", "OUT_FOR_DELIVERY"].includes(o.status)).length} />
-        <StatCard label="Availability" value={profile.availability.replace("_", " ")} />
+    <div className="landing-layout agent-portal-landing">
+      <header className="landing-header">
+        <div className="landing-container flex-header">
+          <Link href="/" className="landing-brand">
+            <span className="brand-logo agent-logo">AG</span>
+            <div className="brand-text">
+              <strong>Agent Portal</strong>
+              <span>Field Operations App</span>
+            </div>
+          </Link>
+          <div className="landing-actions">
+            <Link href="/" className="btn btn-secondary">Home</Link>
+            <Link href="/login/agent" className="btn btn-primary">Sign In</Link>
+          </div>
+        </div>
+      </header>
+
+      <section className="landing-hero role-hero">
+        <div className="landing-container max-w-md-section text-center-hero">
+          <span className="badge-promo badge-agent">Field Operations</span>
+          <h1 className="hero-title">Field Agent Tasks & Assignments</h1>
+          <p className="hero-desc">
+            Check your delivery task queue, mark package pickup status, log transit updates, and record secure delivery completion notes on the move.
+          </p>
+          <div className="hero-ctas justify-center">
+            <Link href="/login/agent" className="btn btn-primary btn-lg">
+              Open Field Assignments <Key size={18} />
+            </Link>
+            <Link href="/register/agent" className="btn btn-secondary btn-lg">
+              Register as Agent
+            </Link>
+          </div>
+        </div>
       </section>
-      <section className="data-section"><div className="section-title"><h2>Active deliveries</h2></div>
-        {orders.length ? <div className="table-wrap"><table><thead><tr><th>Order</th><th>Route</th><th>Customer</th><th>Status</th><th /></tr></thead><tbody>
-          {orders.map((order) => <tr key={order.id}><td><strong>{order.orderNumber}</strong></td><td>{order.pickupAddress.area.name} → {order.dropAddress.area.name}<small>{order.pickupAddress.area.city.name} to {order.dropAddress.area.city.name}</small></td><td>{order.customer.name}<small>{order.customer.phone}</small></td><td><StatusBadge status={order.status} /></td><td><Link className="icon-button" href={`/agent/orders/${order.id}`} title="Open assignment"><ArrowRight size={17} /></Link></td></tr>)}
-        </tbody></table></div> : <div className="empty-state"><Bike size={28} /><h3>No open assignments</h3><p>New work will appear here after dispatch.</p></div>}
+
+      <section className="landing-features">
+        <div className="landing-container">
+          <div className="section-header-center">
+            <span className="section-eyebrow">Agent Privileges</span>
+            <h2>On-Field Workflows</h2>
+            <p>Simple and fast controls designed for mobile view compatibility.</p>
+          </div>
+          <div className="features-grid">
+            <div className="feature-card">
+              <div className="feat-icon"><Navigation size={24} /></div>
+              <h3>Route Tasks</h3>
+              <p>View your active workload assigned within your designated zone and service areas.</p>
+            </div>
+            <div className="feature-card">
+              <div className="feat-icon"><CheckCircle2 size={24} /></div>
+              <h3>Status Updates</h3>
+              <p>Transition orders securely through Picked Up, In Transit, and Out For Delivery statuses.</p>
+            </div>
+            <div className="feature-card">
+              <div className="feat-icon"><Map size={24} /></div>
+              <h3>Availability Controls</h3>
+              <p>Toggle your profile availability between Available, Busy, and Offline to manage dispatch workflow.</p>
+            </div>
+          </div>
+        </div>
       </section>
-    </>
+
+      <footer className="landing-footer">
+        <div className="landing-container">
+          <div className="footer-bottom-bar border-none text-center">
+            <p className="muted text-xs">
+              Delivery agent accounts require registration approval by a platform administrator.
+            </p>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }

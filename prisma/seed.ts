@@ -35,42 +35,42 @@ async function upsertUser(input: {
 
 async function main() {
   const admin = await upsertUser({
-    name: "Aarav Admin",
+    name: "Abhinav",
     email: "admin@lastmile.test",
     phone: "+919999000001",
     role: "ADMIN",
     password: "Admin@12345",
   });
   const manager = await upsertUser({
-    name: "Meera Manager",
+    name: "Rishi",
     email: "manager@lastmile.test",
     phone: "+919999000002",
     role: "MANAGER",
     password: "Manager@12345",
   });
   const agentOne = await upsertUser({
-    name: "Kabir Agent",
+    name: "Luffy",
     email: "agent.delhi@lastmile.test",
     phone: "+919999000003",
     role: "AGENT",
     password: "Agent@12345",
   });
   const agentTwo = await upsertUser({
-    name: "Sara Agent",
+    name: "Eren Yeager",
     email: "agent.mumbai@lastmile.test",
     phone: "+919999000004",
     role: "AGENT",
     password: "Agent@12345",
   });
   const customer = await upsertUser({
-    name: "Riya Customer",
+    name: "Zoro",
     email: "customer@lastmile.test",
     phone: "+919999000005",
     role: "CUSTOMER",
     password: "Customer@12345",
   });
   await upsertUser({
-    name: "Arjun Customer",
+    name: "Nami",
     email: "customer.two@lastmile.test",
     phone: "+919999000006",
     role: "CUSTOMER",
@@ -310,7 +310,7 @@ async function main() {
       data: {
         label: "Demo pickup",
         line1: "14 Barakhamba Road",
-        contactName: "Riya Customer",
+        contactName: "Zoro",
         contactPhone: customer.phone!,
         userId: customer.id,
         areaId: connaughtPlace.id,
@@ -322,7 +322,7 @@ async function main() {
       data: {
         label: "Demo drop",
         line1: "Select Citywalk service entrance",
-        contactName: "Arjun Receiver",
+        contactName: "Sanji",
         contactPhone: "+919999000099",
         userId: customer.id,
         areaId: saket.id,

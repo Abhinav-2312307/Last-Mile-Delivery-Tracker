@@ -139,7 +139,8 @@ export async function createOrder(formData: FormData) {
   const session = await requireSession(["CUSTOMER"]);
   const parsed = orderInputSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) {
-    throw new Error("Please complete all order fields with valid values.");
+    console.error("Zod Validation Fail:", parsed.error.flatten().fieldErrors);
+    throw new Error("Please complete all order fields with valid values. Error: " + JSON.stringify(parsed.error.flatten().fieldErrors));
   }
 
   const input = parsed.data;

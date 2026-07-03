@@ -5,7 +5,7 @@ import {
   approveReschedule,
   assignAgent,
   autoAssignAgent,
-} from "@/app/(dashboard)/manager/orders/actions";
+} from "@/app/(dashboard)/manager/dashboard/orders/actions";
 import { StatusBadge } from "@/components/order/status-badge";
 
 type OrderRow = {

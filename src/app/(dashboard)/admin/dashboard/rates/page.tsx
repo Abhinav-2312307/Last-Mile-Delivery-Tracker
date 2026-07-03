@@ -1,4 +1,4 @@
-import { createRateCard, updateCodSurcharge } from "@/app/(dashboard)/admin/actions";
+import { createRateCard, updateCodSurcharge } from "@/app/(dashboard)/admin/dashboard/actions";
 import { prisma } from "@/lib/db";
 
 export default async function RatesPage() {

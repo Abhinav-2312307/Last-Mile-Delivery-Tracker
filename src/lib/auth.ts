@@ -28,20 +28,29 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        expectedRole: { label: "Expected Role", type: "text" },
       },
       async authorize(credentials) {
-        const parsed = credentialsSchema.safeParse(credentials);
-        if (!parsed.success) return null;
+        if (!credentials?.email || !credentials?.password) return null;
+        const email = String(credentials.email).toLowerCase();
+        const password = String(credentials.password);
+        const expectedRole = credentials.expectedRole;
 
         const user = await prisma.user.findUnique({
-          where: { email: parsed.data.email },
+          where: { email },
         });
         if (!user?.isActive || !user.passwordHash) {
           return null;
         }
+        if (!user.isApproved) {
+          return null;
+        }
+        if (expectedRole && user.role !== expectedRole) {
+          return null;
+        }
 
         const isValid = await bcrypt.compare(
-          parsed.data.password,
+          password,
           user.passwordHash,
         );
         if (!isValid) return null;
@@ -75,9 +84,10 @@ export const authOptions: NextAuthOptions = {
         if (!user.email) return false;
         const dbUser = await prisma.user.findUnique({
           where: { email: user.email.toLowerCase() },
-          select: { id: true, isActive: true, emailVerified: true },
+          select: { id: true, isActive: true, isApproved: true, emailVerified: true },
         });
         if (dbUser && !dbUser.isActive) return false;
+        if (dbUser && !dbUser.isApproved) return false;
         if (dbUser && !dbUser.emailVerified) {
           await prisma.user.update({
             where: { id: dbUser.id },

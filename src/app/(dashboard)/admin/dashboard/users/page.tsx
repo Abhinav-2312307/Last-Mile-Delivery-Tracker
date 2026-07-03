@@ -1,4 +1,4 @@
-import { createStaffUser, toggleUser } from "@/app/(dashboard)/admin/actions";
+import { createStaffUser, toggleUser } from "../actions";
 import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 

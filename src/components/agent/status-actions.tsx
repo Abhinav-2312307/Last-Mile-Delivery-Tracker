@@ -1,6 +1,6 @@
 import type { OrderStatus } from "@prisma/client";
 
-import { updateOrderStatus } from "@/app/(dashboard)/agent/actions";
+import { updateOrderStatus } from "@/app/(dashboard)/agent/dashboard/actions";
 
 const nextStatuses: Partial<Record<OrderStatus, OrderStatus[]>> = {
   ASSIGNED: ["PICKED_UP"],

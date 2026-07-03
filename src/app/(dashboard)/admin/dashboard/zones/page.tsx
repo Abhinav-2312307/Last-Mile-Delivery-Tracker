@@ -1,4 +1,4 @@
-import { createArea, createZone } from "@/app/(dashboard)/admin/actions";
+import { createArea, createZone } from "@/app/(dashboard)/admin/dashboard/actions";
 import { prisma } from "@/lib/db";
 
 export default async function ZonesPage() {

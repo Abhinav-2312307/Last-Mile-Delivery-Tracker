@@ -7,7 +7,9 @@ import {
   MapPinned,
   PackagePlus,
   Settings,
+  ShieldCheck,
   Users,
+  UsersRound,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -26,19 +28,21 @@ const navigation: Record<AppRole, NavItem[]> = {
     { href: "/customer/orders/new", label: "Book delivery", icon: PackagePlus },
   ],
   AGENT: [
-    { href: "/agent", label: "Assignments", icon: Bike },
+    { href: "/agent/dashboard", label: "Assignments", icon: Bike },
   ],
   MANAGER: [
-    { href: "/manager", label: "Overview", icon: BarChart3 },
-    { href: "/manager/orders", label: "Dispatch", icon: Boxes },
+    { href: "/manager/dashboard", label: "Overview", icon: BarChart3 },
+    { href: "/manager/dashboard/orders", label: "Dispatch", icon: Boxes },
   ],
   ADMIN: [
-    { href: "/admin", label: "Overview", icon: LayoutDashboard },
-    { href: "/admin/orders", label: "Orders", icon: Boxes },
-    { href: "/admin/zones", label: "Locations", icon: MapPinned },
-    { href: "/admin/rates", label: "Rate cards", icon: CircleDollarSign },
-    { href: "/admin/users", label: "Users", icon: Users },
-    { href: "/admin/notifications", label: "Notifications", icon: Settings },
+    { href: "/admin/dashboard", label: "Overview", icon: LayoutDashboard },
+    { href: "/admin/dashboard/orders", label: "Orders", icon: Boxes },
+    { href: "/admin/dashboard/zones", label: "Locations", icon: MapPinned },
+    { href: "/admin/dashboard/rates", label: "Rate cards", icon: CircleDollarSign },
+    { href: "/admin/dashboard/users", label: "Users", icon: Users },
+    { href: "/admin/dashboard/approvals", label: "Approvals", icon: ShieldCheck },
+    { href: "/admin/dashboard/team", label: "Team", icon: UsersRound },
+    { href: "/admin/dashboard/notifications", label: "Notifications", icon: Settings },
   ],
 };
 

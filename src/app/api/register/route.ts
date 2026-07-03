@@ -9,6 +9,9 @@ const registrationSchema = z.object({
   email: z.string().email().transform((value) => value.toLowerCase()),
   phone: z.string().trim().min(8).max(20),
   password: z.string().min(8).max(72),
+  role: z.enum(["CUSTOMER", "AGENT", "MANAGER", "ADMIN"]).default("CUSTOMER"),
+  approvalNote: z.string().trim().max(500).optional(),
+  agreedToTerms: z.preprocess((v) => v === "true" || v === true, z.boolean()).optional(),
 });
 
 export async function POST(request: Request) {
@@ -31,16 +34,41 @@ export async function POST(request: Request) {
     );
   }
 
+  const isStaff = parsed.data.role !== "CUSTOMER";
   const user = await prisma.user.create({
     data: {
       name: parsed.data.name,
       email: parsed.data.email,
       phone: parsed.data.phone,
       passwordHash: await bcrypt.hash(parsed.data.password, 10),
-      role: "CUSTOMER",
+      role: parsed.data.role,
+      isApproved: !isStaff, // Customers are auto-approved; staff need admin approval
+      approvalNote: parsed.data.approvalNote || null,
       emailVerified: new Date(),
     },
   });
+
+  // Create agent profile for AGENT role registrations
+  if (user.role === "AGENT") {
+    await prisma.agentProfile.create({
+      data: {
+        userId: user.id,
+        employeeCode: `AG-${Date.now().toString().slice(-6)}`,
+      },
+    });
+  }
+
+  if (isStaff) {
+    return NextResponse.json(
+      {
+        ok: true,
+        email: parsed.data.email,
+        pendingApproval: true,
+        message: "Your registration is pending admin approval. You will be able to sign in once approved.",
+      },
+      { status: 201 },
+    );
+  }
 
   return NextResponse.json(
     { ok: true, email: parsed.data.email },
