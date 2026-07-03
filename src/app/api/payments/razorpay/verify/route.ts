@@ -1,11 +1,15 @@
 import { getServerSession } from "next-auth";
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { notifyCustomerOfStatus } from "@/lib/notifications/notification-service";
-import { verifyRazorpaySignature } from "@/lib/payments/razorpay";
+import {
+  getRazorpayCredentials,
+  verifyRazorpaySignature,
+} from "@/lib/payments/razorpay";
 
 const bodySchema = z.object({
   orderId: z.string(),
@@ -25,14 +29,15 @@ export async function POST(request: Request) {
       order: { customerId: session.user.id },
     },
   });
-  if (!payment || !process.env.RAZORPAY_KEY_SECRET) {
+  if (!payment) {
     return NextResponse.json({ error: "Payment record not found." }, { status: 404 });
   }
+  const { keySecret } = getRazorpayCredentials();
   const valid = verifyRazorpaySignature({
     providerOrderId: body.razorpay_order_id,
     providerPaymentId: body.razorpay_payment_id,
     signature: body.razorpay_signature,
-    secret: process.env.RAZORPAY_KEY_SECRET,
+    secret: keySecret,
   });
   if (!valid) return NextResponse.json({ error: "Invalid payment signature." }, { status: 400 });
 
@@ -60,5 +65,7 @@ export async function POST(request: Request) {
     }),
   ]);
   await notifyCustomerOfStatus(body.orderId);
+  revalidatePath(`/customer/orders/${body.orderId}`);
+  revalidatePath("/customer");
   return NextResponse.json({ ok: true });
 }

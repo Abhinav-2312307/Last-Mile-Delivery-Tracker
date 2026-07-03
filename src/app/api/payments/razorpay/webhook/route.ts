@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
@@ -100,6 +101,11 @@ export async function POST(request: Request) {
   if (transition.notifyCustomer) {
     await notifyCustomerOfStatus(payment.orderId);
   }
+
+  revalidatePath(`/customer/orders/${payment.orderId}`);
+  revalidatePath("/customer");
+  revalidatePath("/manager");
+  revalidatePath("/admin");
 
   return NextResponse.json({ ok: true });
 }

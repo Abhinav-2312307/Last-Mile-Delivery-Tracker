@@ -1,12 +1,21 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import Razorpay from "razorpay";
 
-export function getRazorpayClient() {
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+export function getRazorpayCredentials() {
+  const keyId =
+    process.env.RAZORPAY_KEY_ID ??
+    process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ??
+    process.env.razorpay_key_id;
+  const keySecret =
+    process.env.RAZORPAY_KEY_SECRET ?? process.env.razorpay_key_secret;
   if (!keyId || !keySecret) {
     throw new Error("Razorpay test credentials are not configured.");
   }
+  return { keyId, keySecret };
+}
+
+export function getRazorpayClient() {
+  const { keyId, keySecret } = getRazorpayCredentials();
   return new Razorpay({ key_id: keyId, key_secret: keySecret });
 }
 

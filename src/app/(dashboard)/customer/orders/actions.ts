@@ -3,11 +3,137 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { City as CSCity, Country, State } from "country-state-city";
 
 import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { orderInputSchema } from "@/lib/orders/order-input";
 import { calculateDeliveryCharge } from "@/lib/pricing/rate-engine";
+
+function getCoordinates(countryCode: string, stateCode?: string, cityName?: string) {
+  if (cityName && stateCode) {
+    const city = CSCity.getCitiesOfState(countryCode, stateCode).find(
+      (c) => c.name.toLowerCase() === cityName.toLowerCase()
+    );
+    if (city?.latitude && city?.longitude) {
+      return { latitude: parseFloat(city.latitude), longitude: parseFloat(city.longitude) };
+    }
+  }
+  if (stateCode) {
+    const state = State.getStateByCodeAndCountry(stateCode, countryCode);
+    if (state?.latitude && state?.longitude) {
+      return { latitude: parseFloat(state.latitude), longitude: parseFloat(state.longitude) };
+    }
+  }
+  const country = Country.getCountryByCode(countryCode);
+  if (country?.latitude && country?.longitude) {
+    return { latitude: parseFloat(country.latitude), longitude: parseFloat(country.longitude) };
+  }
+  return { latitude: 0, longitude: 0 };
+}
+
+async function getOrCreateAreaForLocation({
+  countryCode,
+  stateCode,
+  cityName,
+  postalCode,
+}: {
+  countryCode: string;
+  stateCode: string;
+  cityName: string;
+  postalCode: string;
+}) {
+  // Fast-path: Check if the general area for this city already exists
+  const existingArea = await prisma.area.findFirst({
+    where: {
+      name: "General Area",
+      city: {
+        name: cityName,
+        country: { isoCode: countryCode },
+      },
+    },
+    include: { city: { include: { country: true, state: true } } },
+  });
+  if (existingArea) {
+    return existingArea;
+  }
+
+  let country = await prisma.country.findUnique({
+    where: { isoCode: countryCode },
+  });
+  if (!country) {
+    const countryData = Country.getCountryByCode(countryCode);
+    country = await prisma.country.create({
+      data: {
+        name: countryData?.name ?? countryCode,
+        isoCode: countryCode,
+      },
+    });
+  }
+
+  let state = await prisma.state.findFirst({
+    where: { countryId: country.id, isoCode: stateCode },
+  });
+  if (!state) {
+    const stateData = State.getStateByCodeAndCountry(stateCode, countryCode);
+    state = await prisma.state.create({
+      data: {
+        name: stateData?.name ?? stateCode,
+        isoCode: stateCode,
+        countryId: country.id,
+      },
+    });
+  }
+
+  let city = await prisma.city.findFirst({
+    where: { countryId: country.id, name: cityName },
+  });
+  if (!city) {
+    city = await prisma.city.create({
+      data: {
+        name: cityName,
+        countryId: country.id,
+        stateId: state.id,
+      },
+    });
+  }
+
+  const zoneCode = `${countryCode}-${stateCode}-${cityName.replace(/\s+/g, "").toUpperCase()}-CUSTOM`;
+  let zone = await prisma.zone.findUnique({
+    where: { code: zoneCode },
+  });
+  if (!zone) {
+    zone = await prisma.zone.create({
+      data: {
+        name: `${cityName} Custom Zone`,
+        code: zoneCode,
+        cityId: city.id,
+      },
+    });
+  }
+
+  const coords = getCoordinates(countryCode, stateCode, cityName);
+
+  let area = await prisma.area.findFirst({
+    where: { cityId: city.id, name: "General Area" },
+    include: { city: { include: { country: true, state: true } } },
+  });
+  if (!area) {
+    area = await prisma.area.create({
+      data: {
+        name: "General Area",
+        pincode: postalCode || null,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        cityId: city.id,
+        zoneId: zone.id,
+      },
+      include: { city: { include: { country: true, state: true } } },
+    });
+  }
+
+  return area;
+}
 
 export async function createOrder(formData: FormData) {
   const session = await requireSession(["CUSTOMER"]);
@@ -17,19 +143,39 @@ export async function createOrder(formData: FormData) {
   }
 
   const input = parsed.data;
+
+  const pickupPromise = input.pickupAreaId === "custom"
+    ? getOrCreateAreaForLocation({
+        countryCode: input.pickupCountryCode,
+        stateCode: input.pickupStateCode,
+        cityName: input.pickupCityName,
+        postalCode: input.pickupPostalCode,
+      })
+    : prisma.area.findUniqueOrThrow({
+        where: { id: input.pickupAreaId },
+        include: { city: { include: { country: true, state: true } } },
+      });
+
+  const dropPromise = input.dropAreaId === "custom"
+    ? getOrCreateAreaForLocation({
+        countryCode: input.dropCountryCode,
+        stateCode: input.dropStateCode,
+        cityName: input.dropCityName,
+        postalCode: input.dropPostalCode,
+      })
+    : prisma.area.findUniqueOrThrow({
+        where: { id: input.dropAreaId },
+        include: { city: { include: { country: true, state: true } } },
+      });
+
   const [pickupArea, dropArea, rateCards, internationalRateCards, codSurcharges] = await Promise.all([
-    prisma.area.findUniqueOrThrow({
-      where: { id: input.pickupAreaId },
-      include: { city: { include: { country: true, state: true } } },
-    }),
-    prisma.area.findUniqueOrThrow({
-      where: { id: input.dropAreaId },
-      include: { city: { include: { country: true, state: true } } },
-    }),
+    pickupPromise,
+    dropPromise,
     prisma.rateCard.findMany({ where: { isActive: true } }),
     prisma.internationalRateCard.findMany({ where: { isActive: true } }),
     prisma.codSurcharge.findMany({ where: { isActive: true } }),
   ]);
+
   const locationMatches = (
     area: typeof pickupArea,
     countryCode: string,
@@ -92,6 +238,13 @@ export async function createOrder(formData: FormData) {
       orderType: fee.orderType,
       amount: Number(fee.amount),
     })),
+    pickupLatitude: Number(pickupArea.latitude),
+    pickupLongitude: Number(pickupArea.longitude),
+    dropLatitude: Number(dropArea.latitude),
+    dropLongitude: Number(dropArea.longitude),
+    pickupCityName: input.pickupCityName,
+    dropCityName: input.dropCityName,
+    isCustomRoute: input.pickupAreaId === "custom" || input.dropAreaId === "custom",
   });
 
   const order = await prisma.$transaction(async (tx) => {
@@ -172,6 +325,8 @@ export async function createOrder(formData: FormData) {
       },
     });
     return created;
+  }, {
+    timeout: 20000,
   });
 
   revalidatePath("/customer");

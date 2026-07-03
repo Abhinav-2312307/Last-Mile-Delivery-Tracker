@@ -123,4 +123,66 @@ describe("calculateDeliveryCharge", () => {
     expect(quote.baseCharge).toBe(10800);
     expect(quote.codSurcharge).toBe(0);
   });
+
+  it("calculates pricing with distance surcharge for custom intra-zone route", () => {
+    const quote = calculateDeliveryCharge({
+      pickupZoneId: "custom",
+      dropZoneId: "custom",
+      pickupCountryCode: "IN",
+      dropCountryCode: "IN",
+      pickupCityName: "Mumbai",
+      dropCityName: "Mumbai",
+      pickupLatitude: 19.076,
+      pickupLongitude: 72.8777,
+      dropLatitude: 19.1363,
+      dropLongitude: 72.8277,
+      lengthCm: 10,
+      breadthCm: 10,
+      heightCm: 10,
+      actualWeightKg: 1,
+      orderType: "B2C",
+      paymentType: "PREPAID",
+      rateCards,
+      codSurcharges,
+      isCustomRoute: true,
+    });
+
+    expect(quote.routeType).toBe("INTRA_ZONE");
+    // distance between Mumbai coords is approx 8.5 km.
+    // At ₹5 per km (INTRA_ZONE), surcharge is approx 8.5 * 5 = ₹42.5.
+    // pricePerKg = 42, minimumCharge = 80.
+    // base charge = max(80, 1 * 42 + 42.5) = 84.5
+    expect(Math.round(quote.baseCharge)).toBe(85);
+  });
+
+  it("calculates pricing with distance surcharge for custom inter-zone route", () => {
+    const quote = calculateDeliveryCharge({
+      pickupZoneId: "custom",
+      dropZoneId: "custom",
+      pickupCountryCode: "IN",
+      dropCountryCode: "IN",
+      pickupCityName: "Delhi",
+      dropCityName: "Mumbai",
+      pickupLatitude: 28.6139,
+      pickupLongitude: 77.209,
+      dropLatitude: 19.076,
+      dropLongitude: 72.8777,
+      lengthCm: 10,
+      breadthCm: 10,
+      heightCm: 10,
+      actualWeightKg: 1,
+      orderType: "B2C",
+      paymentType: "PREPAID",
+      rateCards,
+      codSurcharges,
+      isCustomRoute: true,
+    });
+
+    expect(quote.routeType).toBe("INTER_ZONE");
+    // distance Delhi-Mumbai is approx 1148.1 km.
+    // At ₹8 per km (INTER_ZONE), surcharge is approx 1148.1 * 8 = 9184.8.
+    // pricePerKg = 68, minimumCharge = 120.
+    // base charge = max(120, 68 + 9184.8) = 9252.8.
+    expect(Math.round(quote.baseCharge)).toBe(9253);
+  });
 });

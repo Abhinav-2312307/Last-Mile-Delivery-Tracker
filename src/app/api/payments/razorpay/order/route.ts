@@ -4,22 +4,15 @@ import { z } from "zod";
 
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getRazorpayClient } from "@/lib/payments/razorpay";
+import {
+  getRazorpayClient,
+  getRazorpayCredentials,
+} from "@/lib/payments/razorpay";
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { orderId } = z.object({ orderId: z.string() }).parse(await request.json());
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { emailVerified: true },
-  });
-  if (!user?.emailVerified) {
-    return NextResponse.json(
-      { error: "Please verify your email before starting payment." },
-      { status: 403 },
-    );
-  }
 
   const order = await prisma.order.findFirst({
     where: {
@@ -39,8 +32,9 @@ export async function POST(request: Request) {
   if (!order) return NextResponse.json({ error: "Order is not payable." }, { status: 404 });
   const pendingPayment = order.payments[0];
   if (pendingPayment?.providerOrderId) {
+    const { keyId } = getRazorpayCredentials();
     return NextResponse.json({
-      keyId: process.env.RAZORPAY_KEY_ID,
+      keyId,
       providerOrderId: pendingPayment.providerOrderId,
       amount: Math.round(Number(pendingPayment.amount) * 100),
       currency: pendingPayment.currency,
@@ -51,6 +45,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    const { keyId } = getRazorpayCredentials();
     const providerOrder = await getRazorpayClient().orders.create({
       amount: Math.round(Number(order.totalCharge) * 100),
       currency: "INR",
@@ -67,7 +62,7 @@ export async function POST(request: Request) {
       },
     });
     return NextResponse.json({
-      keyId: process.env.RAZORPAY_KEY_ID,
+      keyId,
       providerOrderId: providerOrder.id,
       amount: providerOrder.amount,
       currency: providerOrder.currency,

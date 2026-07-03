@@ -28,6 +28,8 @@ export default async function NewOrderPage() {
           stateCode: area.city.state?.isoCode ?? "",
           countryName: area.city.country.name,
           countryCode: area.city.country.isoCode,
+          latitude: Number(area.latitude),
+          longitude: Number(area.longitude),
         }))}
         internationalRateCards={internationalRateCards.map((rate) => ({
           id: rate.id,

@@ -51,15 +51,28 @@ export function RazorpayButton({ orderId }: { orderId: string }) {
       order_id: data.providerOrderId,
       prefill: { name: data.customerName, email: data.customerEmail },
       handler: async (result: Record<string, string>) => {
-        const verification = await fetch("/api/payments/razorpay/verify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId, ...result }),
-        });
-        if (verification.ok) window.location.reload();
-        else {
-          const payload = await verification.json();
-          setError(payload.error);
+        try {
+          const verification = await fetch("/api/payments/razorpay/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ orderId, ...result }),
+          });
+          if (verification.ok) {
+            window.location.reload();
+          } else {
+            const text = await verification.text();
+            let errorMessage = "Payment verification failed.";
+            try {
+              const payload = JSON.parse(text);
+              errorMessage = payload.error || errorMessage;
+            } catch {
+              errorMessage = text || errorMessage;
+            }
+            setError(errorMessage);
+            setPending(false);
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Network error during verification.");
           setPending(false);
         }
       },

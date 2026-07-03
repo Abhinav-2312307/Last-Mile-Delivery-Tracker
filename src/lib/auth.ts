@@ -6,6 +6,7 @@ import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 
+import { mapGoogleProfile } from "@/lib/auth/google-profile";
 import { prisma } from "@/lib/db";
 
 const credentialsSchema = z.object({
@@ -35,7 +36,7 @@ export const authOptions: NextAuthOptions = {
         const user = await prisma.user.findUnique({
           where: { email: parsed.data.email },
         });
-        if (!user?.isActive || !user.passwordHash || !user.emailVerified) {
+        if (!user?.isActive || !user.passwordHash) {
           return null;
         }
 
@@ -59,6 +60,7 @@ export const authOptions: NextAuthOptions = {
             clientId: googleClientId,
             clientSecret: googleClientSecret,
             allowDangerousEmailAccountLinking: true,
+            profile: mapGoogleProfile,
           }),
         ]
       : []),

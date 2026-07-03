@@ -2,6 +2,15 @@
 
 import { City as CSCity, Country, State } from "country-state-city";
 import { useMemo, useState } from "react";
+function isRedirectError(error: unknown): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    "digest" in error &&
+    typeof (error as { digest?: unknown }).digest === "string" &&
+    String((error as { digest: string }).digest).startsWith("NEXT_REDIRECT")
+  );
+}
 
 import { createOrder } from "@/app/(dashboard)/customer/orders/actions";
 import { PARCEL_LIMITS } from "@/lib/orders/order-input";
@@ -21,6 +30,8 @@ type AreaOption = {
   stateCode: string;
   countryName: string;
   countryCode: string;
+  latitude: number;
+  longitude: number;
 };
 
 type RateOption = RateCardInput;
@@ -80,6 +91,7 @@ export function OrderForm({
   codSurcharges: { orderType: "B2B" | "B2C"; amount: number }[];
 }) {
   const [step, setStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [values, setValues] = useState<FormValues>({
     ...initialAddress("pickup", areas[0]),
     ...initialAddress("drop", areas[1] ?? areas[0]),
@@ -96,18 +108,71 @@ export function OrderForm({
   const international =
     values.pickupCountryCode !== values.dropCountryCode;
 
+  const pickupCoords = useMemo(() => {
+    if (pickup) {
+      return { latitude: Number(pickup.latitude), longitude: Number(pickup.longitude) };
+    }
+    if (values.pickupAreaId === "custom") {
+      const city = CSCity.getCitiesOfState(values.pickupCountryCode, values.pickupStateCode).find(
+        (c) => c.name.toLowerCase() === values.pickupCityName.toLowerCase()
+      );
+      if (city?.latitude && city?.longitude) {
+        return { latitude: parseFloat(city.latitude), longitude: parseFloat(city.longitude) };
+      }
+      const state = State.getStateByCodeAndCountry(values.pickupStateCode, values.pickupCountryCode);
+      if (state?.latitude && state?.longitude) {
+        return { latitude: parseFloat(state.latitude), longitude: parseFloat(state.longitude) };
+      }
+      const country = Country.getCountryByCode(values.pickupCountryCode);
+      if (country?.latitude && country?.longitude) {
+        return { latitude: parseFloat(country.latitude), longitude: parseFloat(country.longitude) };
+      }
+    }
+    return null;
+  }, [pickup, values.pickupAreaId, values.pickupCityName, values.pickupCountryCode, values.pickupStateCode]);
+
+  const dropCoords = useMemo(() => {
+    if (drop) {
+      return { latitude: Number(drop.latitude), longitude: Number(drop.longitude) };
+    }
+    if (values.dropAreaId === "custom") {
+      const city = CSCity.getCitiesOfState(values.dropCountryCode, values.dropStateCode).find(
+        (c) => c.name.toLowerCase() === values.dropCityName.toLowerCase()
+      );
+      if (city?.latitude && city?.longitude) {
+        return { latitude: parseFloat(city.latitude), longitude: parseFloat(city.longitude) };
+      }
+      const state = State.getStateByCodeAndCountry(values.dropStateCode, values.dropCountryCode);
+      if (state?.latitude && state?.longitude) {
+        return { latitude: parseFloat(state.latitude), longitude: parseFloat(state.longitude) };
+      }
+      const country = Country.getCountryByCode(values.dropCountryCode);
+      if (country?.latitude && country?.longitude) {
+        return { latitude: parseFloat(country.latitude), longitude: parseFloat(country.longitude) };
+      }
+    }
+    return null;
+  }, [drop, values.dropAreaId, values.dropCityName, values.dropCountryCode, values.dropStateCode]);
+
   const quote = useMemo(() => {
-    if (!pickup || !drop) return null;
+    const isCustom = values.pickupAreaId === "custom" || values.dropAreaId === "custom";
+    if (!isCustom && (!pickup || !drop)) return null;
+    if (isCustom && (!pickupCoords || !dropCoords)) return null;
     try {
       return calculateDeliveryCharge({
         ...values,
-        pickupZoneId: pickup.zoneId,
-        dropZoneId: drop.zoneId,
+        pickupZoneId: pickup?.zoneId ?? "custom",
+        dropZoneId: drop?.zoneId ?? "custom",
         pickupCountryCode: values.pickupCountryCode,
         dropCountryCode: values.dropCountryCode,
         rateCards,
         internationalRateCards,
         codSurcharges,
+        pickupLatitude: pickupCoords?.latitude,
+        pickupLongitude: pickupCoords?.longitude,
+        dropLatitude: dropCoords?.latitude,
+        dropLongitude: dropCoords?.longitude,
+        isCustomRoute: isCustom,
       });
     } catch {
       return null;
@@ -119,6 +184,8 @@ export function OrderForm({
     pickup,
     rateCards,
     values,
+    pickupCoords,
+    dropCoords,
   ]);
 
   function update<K extends keyof FormValues>(name: K, value: FormValues[K]) {
@@ -147,7 +214,7 @@ export function OrderForm({
         );
         (next[`${prefix}StateCode` as keyof FormValues] as string) = stateCode;
         (next[`${prefix}CityName` as keyof FormValues] as string) = cityName;
-        (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? "";
+        (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? (cityName ? "custom" : "");
         (next[`${prefix}PostalCode` as keyof FormValues] as string) =
           area?.pincode ?? "";
       }
@@ -165,7 +232,7 @@ export function OrderForm({
             candidate.cityName === cityName,
         );
         (next[`${prefix}CityName` as keyof FormValues] as string) = cityName;
-        (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? "";
+        (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? (cityName ? "custom" : "");
         (next[`${prefix}PostalCode` as keyof FormValues] as string) =
           area?.pincode ?? "";
       }
@@ -183,7 +250,7 @@ export function OrderForm({
             candidate.stateCode === stateCode &&
             candidate.cityName === value,
         );
-        (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? "";
+        (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? (value ? "custom" : "");
         (next[`${prefix}PostalCode` as keyof FormValues] as string) =
           area?.pincode ?? "";
       }
@@ -230,7 +297,22 @@ export function OrderForm({
     values.actualWeightKg <= PARCEL_LIMITS.maximumWeightKg;
 
   return (
-    <form action={createOrder} className="order-wizard">
+    <form
+      action={async (formData) => {
+        if (isSubmitting) return;
+        setIsSubmitting(true);
+        try {
+          await createOrder(formData);
+        } catch (err) {
+          if (isRedirectError(err)) {
+            throw err;
+          }
+          setIsSubmitting(false);
+          alert(err instanceof Error ? err.message : "Failed to create order");
+        }
+      }}
+      className="order-wizard"
+    >
       {Object.entries(values).map(([name, value]) => (
         <input key={name} name={name} type="hidden" value={String(value)} />
       ))}
@@ -372,8 +454,8 @@ export function OrderForm({
             Continue
           </button>
         ) : (
-          <button className="button button-primary" disabled={!quote}>
-            Confirm order
+          <button className="button button-primary" disabled={!quote || isSubmitting}>
+            {isSubmitting ? "Creating order..." : "Confirm order"}
           </button>
         )}
       </div>
@@ -457,13 +539,19 @@ function AddressStep({
         <label>
           Service area
           <select value={get("AreaId")} onChange={(event) => updateLocation(prefix, "AreaId", event.target.value)}>
-            <option value="">Select a serviceable area</option>
-            {serviceAreas.map((area) => (
-              <option key={area.id} value={area.id}>{area.name} ({area.zoneName})</option>
-            ))}
+            {cityName && serviceAreas.length === 0 ? (
+              <option value="custom">Standard Delivery Area (Custom Distance Pricing)</option>
+            ) : (
+              <>
+                <option value="">Select a serviceable area</option>
+                {serviceAreas.map((area) => (
+                  <option key={area.id} value={area.id}>{area.name} ({area.zoneName})</option>
+                ))}
+              </>
+            )}
           </select>
           {cityName && serviceAreas.length === 0 && (
-            <small className="form-error">This city is not serviceable yet.</small>
+            <small className="text-amber-600 block mt-1">This city will use distance-based pricing.</small>
           )}
         </label>
         <label>
@@ -513,7 +601,7 @@ function ReviewAddress({
     <article className="review-card">
       <h3>{title}</h3>
       <p>{get("Line1")}{get("Line2") ? `, ${get("Line2")}` : ""}</p>
-      <p>{area?.name}, {get("CityName")}, {state}, {country} {get("PostalCode")}</p>
+      <p>{area?.name || "Standard Delivery Area"}, {get("CityName")}, {state}, {country} {get("PostalCode")}</p>
       <small>{get("ContactName")} · {get("ContactPhone")}</small>
     </article>
   );

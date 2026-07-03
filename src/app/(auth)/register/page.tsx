@@ -26,7 +26,7 @@ export default function RegisterPage() {
       setPending(false);
       return;
     }
-    router.push(`/verify-email?email=${encodeURIComponent(result.email ?? String(data.email))}`);
+    router.push("/login");
   }
 
   return (
@@ -39,8 +39,7 @@ export default function RegisterPage() {
           <p className="eyebrow">Customer account</p>
           <h1>Create your account</h1>
           <p className="muted">
-            Book and monitor deliveries from one place. We will verify your
-            email with a 6-digit OTP before login.
+            Book and monitor deliveries from one place.
           </p>
         </div>
         <form className="form-stack" onSubmit={submit}>

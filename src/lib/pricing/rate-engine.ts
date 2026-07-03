@@ -38,6 +38,13 @@ export type DeliveryChargeInput = {
   rateCards: readonly RateCardInput[];
   internationalRateCards?: readonly InternationalRateCardInput[];
   codSurcharges: readonly CodSurchargeInput[];
+  pickupLatitude?: number;
+  pickupLongitude?: number;
+  dropLatitude?: number;
+  dropLongitude?: number;
+  pickupCityName?: string;
+  dropCityName?: string;
+  isCustomRoute?: boolean;
 };
 
 export type DeliveryChargeQuote = {
@@ -54,6 +61,25 @@ const roundMoney = (value: number) => Math.round(value * 100) / 100;
 
 const roundWeight = (value: number) => Math.round(value * 1000) / 1000;
 
+function calculateDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 export function calculateDeliveryCharge(
   input: DeliveryChargeInput,
 ): DeliveryChargeQuote {
@@ -61,11 +87,26 @@ export function calculateDeliveryCharge(
     Boolean(input.pickupCountryCode) &&
     Boolean(input.dropCountryCode) &&
     input.pickupCountryCode !== input.dropCountryCode;
+
+  const isCustom =
+    Boolean(input.isCustomRoute) ||
+    input.pickupZoneId === "custom" ||
+    input.dropZoneId === "custom";
+
+  const isIntraZone =
+    !isInternational &&
+    ((!isCustom && input.pickupZoneId === input.dropZoneId) ||
+      (isCustom &&
+        input.pickupCityName !== undefined &&
+        input.dropCityName !== undefined &&
+        input.pickupCityName.toLowerCase() === input.dropCityName.toLowerCase()));
+
   const routeType: RouteType = isInternational
     ? "INTERNATIONAL"
-    : input.pickupZoneId === input.dropZoneId
+    : isIntraZone
       ? "INTRA_ZONE"
       : "INTER_ZONE";
+
   const volumetricWeightKg = roundWeight(
     (input.lengthCm * input.breadthCm * input.heightCm) / 5000,
   );
@@ -90,7 +131,34 @@ export function calculateDeliveryCharge(
     );
   }
 
-  const calculatedBaseCharge = billableWeightKg * rateCard.pricePerKg;
+  let distance = 0;
+  if (isCustom) {
+    if (
+      input.pickupLatitude !== undefined &&
+      input.pickupLongitude !== undefined &&
+      input.dropLatitude !== undefined &&
+      input.dropLongitude !== undefined
+    ) {
+      distance = calculateDistance(
+        input.pickupLatitude,
+        input.pickupLongitude,
+        input.dropLatitude,
+        input.dropLongitude,
+      );
+    }
+    if (distance <= 0) {
+      distance = isInternational ? 5000 : 50;
+    }
+    if (distance < 5) {
+      distance = 5;
+    }
+  }
+
+  const distanceSurcharge = isCustom
+    ? distance * (routeType === "INTERNATIONAL" ? 15 : routeType === "INTER_ZONE" ? 8 : 5)
+    : 0;
+
+  const calculatedBaseCharge = billableWeightKg * rateCard.pricePerKg + distanceSurcharge;
   const baseCharge = roundMoney(
     Math.max(rateCard.minimumCharge, calculatedBaseCharge),
   );

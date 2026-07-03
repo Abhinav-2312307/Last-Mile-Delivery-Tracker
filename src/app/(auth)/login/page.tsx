@@ -21,7 +21,7 @@ export default function LoginPage() {
     });
 
     if (result?.error) {
-      setError("Email/password is incorrect, or this email is not verified yet.");
+      setError("Email/password is incorrect.");
       setPending(false);
       return;
     }
@@ -76,9 +76,6 @@ export default function LoginPage() {
         </form>
         <p className="muted text-sm">
           New customer? <Link href="/register">Create an account</Link>
-        </p>
-        <p className="muted text-sm">
-          Need OTP again? <Link href="/verify-email">Verify your email</Link>
         </p>
       </section>
       <aside className="auth-aside">
