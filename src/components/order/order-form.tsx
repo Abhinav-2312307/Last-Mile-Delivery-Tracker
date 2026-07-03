@@ -1,7 +1,28 @@
 "use client";
 
 import { City as CSCity, Country, State } from "country-state-city";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { MapPin, Locate } from "lucide-react";
+
+function loadLeaflet(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if ((window as any).L) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css";
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load Leaflet"));
+    document.body.appendChild(script);
+  });
+}
 function isRedirectError(error: unknown): boolean {
   return (
     error !== null &&
@@ -48,6 +69,8 @@ type FormValues = {
   pickupPostalCode: string;
   pickupContactName: string;
   pickupContactPhone: string;
+  pickupLatitude: number;
+  pickupLongitude: number;
   dropCountryCode: string;
   dropStateCode: string;
   dropCityName: string;
@@ -57,6 +80,8 @@ type FormValues = {
   dropPostalCode: string;
   dropContactName: string;
   dropContactPhone: string;
+  dropLatitude: number;
+  dropLongitude: number;
   lengthCm: number;
   breadthCm: number;
   heightCm: number;
@@ -76,6 +101,8 @@ function initialAddress(prefix: AddressPrefix, area?: AreaOption) {
     [`${prefix}PostalCode`]: area?.pincode ?? "",
     [`${prefix}ContactName`]: "",
     [`${prefix}ContactPhone`]: "",
+    [`${prefix}Latitude`]: area?.latitude ?? 0,
+    [`${prefix}Longitude`]: area?.longitude ?? 0,
   };
 }
 
@@ -109,6 +136,9 @@ export function OrderForm({
     values.pickupCountryCode !== values.dropCountryCode;
 
   const pickupCoords = useMemo(() => {
+    if (values.pickupLatitude && values.pickupLongitude) {
+      return { latitude: values.pickupLatitude, longitude: values.pickupLongitude };
+    }
     if (pickup) {
       return { latitude: Number(pickup.latitude), longitude: Number(pickup.longitude) };
     }
@@ -129,9 +159,12 @@ export function OrderForm({
       }
     }
     return null;
-  }, [pickup, values.pickupAreaId, values.pickupCityName, values.pickupCountryCode, values.pickupStateCode]);
+  }, [pickup, values.pickupAreaId, values.pickupCityName, values.pickupCountryCode, values.pickupStateCode, values.pickupLatitude, values.pickupLongitude]);
 
   const dropCoords = useMemo(() => {
+    if (values.dropLatitude && values.dropLongitude) {
+      return { latitude: values.dropLatitude, longitude: values.dropLongitude };
+    }
     if (drop) {
       return { latitude: Number(drop.latitude), longitude: Number(drop.longitude) };
     }
@@ -152,7 +185,7 @@ export function OrderForm({
       }
     }
     return null;
-  }, [drop, values.dropAreaId, values.dropCityName, values.dropCountryCode, values.dropStateCode]);
+  }, [drop, values.dropAreaId, values.dropCityName, values.dropCountryCode, values.dropStateCode, values.dropLatitude, values.dropLongitude]);
 
   const quote = useMemo(() => {
     const isCustom = values.pickupAreaId === "custom" || values.dropAreaId === "custom";
@@ -188,6 +221,351 @@ export function OrderForm({
     dropCoords,
   ]);
 
+  // Location states
+  const [mapModalOpen, setMapModalOpen] = useState(false);
+  const [mapPrefix, setMapPrefix] = useState<AddressPrefix>("pickup");
+  const [mapCoords, setMapCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [mapSelectedAddress, setMapSelectedAddress] = useState("");
+  const [mapAddressLoading, setMapAddressLoading] = useState(false);
+  const [mapGeocodedData, setMapGeocodedData] = useState<any>(null);
+  const [detectingPrefix, setDetectingPrefix] = useState<AddressPrefix | null>(null);
+  const [fetchingPincodePrefix, setFetchingPincodePrefix] = useState<AddressPrefix | null>(null);
+
+  const [map, setMap] = useState<any>(null);
+  const [marker, setMarker] = useState<any>(null);
+
+  // reverse geocode coords using Nominatim
+  async function reverseGeocode(lat: number, lng: number) {
+    setMapAddressLoading(true);
+    setMapSelectedAddress("");
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
+        {
+          headers: {
+            "Accept-Language": "en",
+            "User-Agent": "Last-Mile-Delivery-Tracker-App"
+          }
+        }
+      );
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      if (data && data.display_name) {
+        setMapSelectedAddress(data.display_name);
+        setMapGeocodedData(data);
+        return data;
+      }
+    } catch {
+      setMapSelectedAddress(`Coordinates: ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+    } finally {
+      setMapAddressLoading(false);
+    }
+    return null;
+  }
+
+  // Handle leaflet map initialization & updates
+  useEffect(() => {
+    if (!mapModalOpen) {
+      if (map) {
+        map.remove();
+        setMap(null);
+        setMarker(null);
+      }
+      return;
+    }
+
+    let active = true;
+
+    loadLeaflet().then(() => {
+      if (!active) return;
+      const L = (window as any).L;
+      if (!L) return;
+
+      const initialLat = mapCoords?.lat ?? 20.5937;
+      const initialLng = mapCoords?.lng ?? 78.9629;
+
+      const mapInstance = L.map("leaflet-map").setView([initialLat, initialLng], 13);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(mapInstance);
+
+      // Create a draggable marker
+      const markerInstance = L.marker([initialLat, initialLng], { draggable: true }).addTo(mapInstance);
+      
+      setMap(mapInstance);
+      setMarker(markerInstance);
+
+      reverseGeocode(initialLat, initialLng);
+
+      const handleMove = async (latlng: any) => {
+        setMapCoords({ lat: latlng.lat, lng: latlng.lng });
+        await reverseGeocode(latlng.lat, latlng.lng);
+      };
+
+      markerInstance.on("dragend", (e: any) => {
+        handleMove(e.target.getLatLng());
+      });
+
+      mapInstance.on("click", (e: any) => {
+        markerInstance.setLatLng(e.latlng);
+        handleMove(e.latlng);
+      });
+    }).catch(console.error);
+
+    return () => {
+      active = false;
+    };
+  }, [mapModalOpen]);
+
+  const confirmMapLocation = () => {
+    if (!mapCoords) return;
+    setValues((current) => {
+      const next = { ...current } as FormValues;
+      const prefix = mapPrefix;
+      
+      (next[`${prefix}Latitude` as keyof FormValues] as number) = mapCoords.lat;
+      (next[`${prefix}Longitude` as keyof FormValues] as number) = mapCoords.lng;
+      
+      if (mapGeocodedData && mapGeocodedData.address) {
+        const addr = mapGeocodedData.address;
+        const countryCode = (addr.country_code || "in").toUpperCase();
+        (next[`${prefix}CountryCode` as keyof FormValues] as string) = countryCode;
+        
+        const stateName = addr.state || addr.region || "";
+        if (stateName) {
+          const matchedState = State.getStatesOfCountry(countryCode).find(
+            (s) => s.name.toLowerCase() === stateName.toLowerCase()
+          );
+          if (matchedState) {
+            (next[`${prefix}StateCode` as keyof FormValues] as string) = matchedState.isoCode;
+          }
+        }
+        
+        const cityName = addr.city || addr.town || addr.village || addr.suburb || addr.municipality || "";
+        if (cityName) {
+          (next[`${prefix}CityName` as keyof FormValues] as string) = cityName;
+        }
+        
+        const postCode = addr.postcode || "";
+        if (postCode) {
+          (next[`${prefix}PostalCode` as keyof FormValues] as string) = postCode;
+        }
+        
+        const line1 = [addr.house_number, addr.road].filter(Boolean).join(", ");
+        if (line1) {
+          (next[`${prefix}Line1` as keyof FormValues] as string) = line1;
+        }
+        const line2 = [addr.suburb, addr.neighbourhood, addr.subdistrict].filter(Boolean).join(", ");
+        if (line2) {
+          (next[`${prefix}Line2` as keyof FormValues] as string) = line2;
+        }
+        
+        const area = areas.find(
+          (candidate) =>
+            candidate.countryCode === countryCode &&
+            candidate.stateCode === (next[`${prefix}StateCode` as keyof FormValues] as string) &&
+            candidate.cityName === (next[`${prefix}CityName` as keyof FormValues] as string)
+        );
+        (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? (cityName ? "custom" : "");
+      }
+      
+      return next;
+    });
+    setMapModalOpen(false);
+  };
+
+  const detectLocation = (prefix: AddressPrefix) => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser.");
+      return;
+    }
+    setDetectingPrefix(prefix);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`,
+            {
+              headers: {
+                "Accept-Language": "en",
+                "User-Agent": "Last-Mile-Delivery-Tracker-App"
+              }
+            }
+          );
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          setValues((current) => {
+            const next = { ...current } as FormValues;
+            
+            (next[`${prefix}Latitude` as keyof FormValues] as number) = latitude;
+            (next[`${prefix}Longitude` as keyof FormValues] as number) = longitude;
+            
+            if (data && data.address) {
+              const addr = data.address;
+              const countryCode = (addr.country_code || "in").toUpperCase();
+              (next[`${prefix}CountryCode` as keyof FormValues] as string) = countryCode;
+              
+              const stateName = addr.state || addr.region || "";
+              if (stateName) {
+                const matchedState = State.getStatesOfCountry(countryCode).find(
+                  (s) => s.name.toLowerCase() === stateName.toLowerCase()
+                );
+                if (matchedState) {
+                  (next[`${prefix}StateCode` as keyof FormValues] as string) = matchedState.isoCode;
+                }
+              }
+              
+              const cityName = addr.city || addr.town || addr.village || addr.suburb || addr.municipality || "";
+              if (cityName) {
+                (next[`${prefix}CityName` as keyof FormValues] as string) = cityName;
+              }
+              
+              const postCode = addr.postcode || "";
+              if (postCode) {
+                (next[`${prefix}PostalCode` as keyof FormValues] as string) = postCode;
+              }
+              
+              const line1 = [addr.house_number, addr.road].filter(Boolean).join(", ");
+              if (line1) {
+                (next[`${prefix}Line1` as keyof FormValues] as string) = line1;
+              }
+              const line2 = [addr.suburb, addr.neighbourhood, addr.subdistrict].filter(Boolean).join(", ");
+              if (line2) {
+                (next[`${prefix}Line2` as keyof FormValues] as string) = line2;
+              }
+              
+              const area = areas.find(
+                (candidate) =>
+                  candidate.countryCode === countryCode &&
+                  candidate.stateCode === (next[`${prefix}StateCode` as keyof FormValues] as string) &&
+                  candidate.cityName === (next[`${prefix}CityName` as keyof FormValues] as string)
+              );
+              (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? (cityName ? "custom" : "");
+            }
+            return next;
+          });
+        } catch (err) {
+          alert("Could not retrieve address details for your location. You can try pinning it on the map.");
+        } finally {
+          setDetectingPrefix(null);
+        }
+      },
+      (error) => {
+        alert(error.message || "Failed to detect location.");
+        setDetectingPrefix(null);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handlePincodeLookup = async (prefix: AddressPrefix, pincode: string) => {
+    const cleanPincode = pincode.trim();
+    if (cleanPincode.length < 3) return;
+    
+    const countryCode = String(values[`${prefix}CountryCode` as keyof FormValues]);
+    setFetchingPincodePrefix(prefix);
+    
+    try {
+      let resolved = false;
+      
+      try {
+        const res = await fetch(`https://api.zippopotam.us/${countryCode.toLowerCase()}/${cleanPincode}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.places && data.places.length > 0) {
+            const place = data.places[0];
+            const stateName = place.state;
+            const cityName = place["place name"];
+            const lat = parseFloat(place.latitude);
+            const lng = parseFloat(place.longitude);
+            
+            setValues((current) => {
+              const next = { ...current } as FormValues;
+              
+              if (stateName) {
+                const matchedState = State.getStatesOfCountry(countryCode).find(
+                  (s) => s.name.toLowerCase() === stateName.toLowerCase()
+                );
+                if (matchedState) {
+                  (next[`${prefix}StateCode` as keyof FormValues] as string) = matchedState.isoCode;
+                }
+              }
+              if (cityName) {
+                (next[`${prefix}CityName` as keyof FormValues] as string) = cityName;
+              }
+              if (lat && lng) {
+                (next[`${prefix}Latitude` as keyof FormValues] as number) = lat;
+                (next[`${prefix}Longitude` as keyof FormValues] as number) = lng;
+              }
+              
+              const area = areas.find(
+                (candidate) =>
+                  candidate.countryCode === countryCode &&
+                  candidate.stateCode === (next[`${prefix}StateCode` as keyof FormValues] as string) &&
+                  candidate.cityName === (next[`${prefix}CityName` as keyof FormValues] as string)
+              );
+              (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? (cityName ? "custom" : "");
+              
+              return next;
+            });
+            resolved = true;
+          }
+        }
+      } catch {}
+      
+      if (!resolved && countryCode === "IN") {
+        const res = await fetch(`https://api.postalpincode.in/pincode/${cleanPincode}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data[0] && data[0].Status === "Success" && data[0].PostOffice && data[0].PostOffice.length > 0) {
+            const postOffice = data[0].PostOffice[0];
+            const stateName = postOffice.State;
+            const cityName = postOffice.District;
+            
+            setValues((current) => {
+              const next = { ...current } as FormValues;
+              
+              if (stateName) {
+                const matchedState = State.getStatesOfCountry(countryCode).find(
+                  (s) => s.name.toLowerCase() === stateName.toLowerCase()
+                );
+                if (matchedState) {
+                  (next[`${prefix}StateCode` as keyof FormValues] as string) = matchedState.isoCode;
+                }
+              }
+              if (cityName) {
+                (next[`${prefix}CityName` as keyof FormValues] as string) = cityName;
+              }
+              
+              const area = areas.find(
+                (candidate) =>
+                  candidate.countryCode === countryCode &&
+                  candidate.stateCode === (next[`${prefix}StateCode` as keyof FormValues] as string) &&
+                  candidate.cityName === (next[`${prefix}CityName` as keyof FormValues] as string)
+              );
+              (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? (cityName ? "custom" : "");
+              
+              return next;
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setFetchingPincodePrefix(null);
+    }
+  };
+
+  const triggerMapPin = (prefix: AddressPrefix) => {
+    setMapPrefix(prefix);
+    const currentLat = Number(values[`${prefix}Latitude` as keyof FormValues]) || 20.5937;
+    const currentLng = Number(values[`${prefix}Longitude` as keyof FormValues]) || 78.9629;
+    setMapCoords({ lat: currentLat, lng: currentLng });
+    setMapModalOpen(true);
+  };
+
   function update<K extends keyof FormValues>(name: K, value: FormValues[K]) {
     setValues((current) => ({ ...current, [name]: value }));
   }
@@ -201,6 +579,37 @@ export function OrderForm({
       const next = { ...current } as FormValues;
       const key = `${prefix}${field}` as keyof FormValues;
       (next[key] as string) = value;
+
+      const setCoordsFromArea = (areaCandidate?: AreaOption) => {
+        if (areaCandidate) {
+          (next[`${prefix}Latitude` as keyof FormValues] as number) = areaCandidate.latitude;
+          (next[`${prefix}Longitude` as keyof FormValues] as number) = areaCandidate.longitude;
+        } else {
+          const countryCodeVal = String(next[`${prefix}CountryCode` as keyof FormValues]);
+          const stateCodeVal = String(next[`${prefix}StateCode` as keyof FormValues]);
+          const cityNameVal = String(next[`${prefix}CityName` as keyof FormValues]);
+
+          const city = CSCity.getCitiesOfState(countryCodeVal, stateCodeVal).find(
+            (c) => c.name.toLowerCase() === cityNameVal.toLowerCase()
+          );
+          if (city?.latitude && city?.longitude) {
+            (next[`${prefix}Latitude` as keyof FormValues] as number) = parseFloat(city.latitude);
+            (next[`${prefix}Longitude` as keyof FormValues] as number) = parseFloat(city.longitude);
+          } else {
+            const state = State.getStateByCodeAndCountry(stateCodeVal, countryCodeVal);
+            if (state?.latitude && state?.longitude) {
+              (next[`${prefix}Latitude` as keyof FormValues] as number) = parseFloat(state.latitude);
+              (next[`${prefix}Longitude` as keyof FormValues] as number) = parseFloat(state.longitude);
+            } else {
+              const country = Country.getCountryByCode(countryCodeVal);
+              if (country?.latitude && country?.longitude) {
+                (next[`${prefix}Latitude` as keyof FormValues] as number) = parseFloat(country.latitude);
+                (next[`${prefix}Longitude` as keyof FormValues] as number) = parseFloat(country.longitude);
+              }
+            }
+          }
+        }
+      };
 
       if (field === "CountryCode") {
         const stateCode = State.getStatesOfCountry(value)[0]?.isoCode ?? "";
@@ -217,6 +626,7 @@ export function OrderForm({
         (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? (cityName ? "custom" : "");
         (next[`${prefix}PostalCode` as keyof FormValues] as string) =
           area?.pincode ?? "";
+        setCoordsFromArea(area);
       }
 
       if (field === "StateCode") {
@@ -235,6 +645,7 @@ export function OrderForm({
         (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? (cityName ? "custom" : "");
         (next[`${prefix}PostalCode` as keyof FormValues] as string) =
           area?.pincode ?? "";
+        setCoordsFromArea(area);
       }
 
       if (field === "CityName") {
@@ -253,6 +664,7 @@ export function OrderForm({
         (next[`${prefix}AreaId` as keyof FormValues] as string) = area?.id ?? (value ? "custom" : "");
         (next[`${prefix}PostalCode` as keyof FormValues] as string) =
           area?.pincode ?? "";
+        setCoordsFromArea(area);
       }
 
       if (field === "AreaId") {
@@ -261,6 +673,7 @@ export function OrderForm({
           (next[`${prefix}PostalCode` as keyof FormValues] as string) =
             area.pincode;
         }
+        setCoordsFromArea(area);
       }
       if (
         next.pickupCountryCode !== next.dropCountryCode &&
@@ -297,7 +710,8 @@ export function OrderForm({
     values.actualWeightKg <= PARCEL_LIMITS.maximumWeightKg;
 
   return (
-    <form
+    <>
+      <form
       action={async (formData) => {
         if (isSubmitting) return;
         setIsSubmitting(true);
@@ -337,6 +751,11 @@ export function OrderForm({
           values={values}
           update={update}
           updateLocation={updateLocation}
+          detectLocation={detectLocation}
+          detecting={detectingPrefix === "pickup"}
+          openMap={triggerMapPin}
+          handlePincodeLookup={handlePincodeLookup}
+          fetchingPincode={fetchingPincodePrefix === "pickup"}
         />
       )}
       {step === 2 && (
@@ -347,6 +766,11 @@ export function OrderForm({
           values={values}
           update={update}
           updateLocation={updateLocation}
+          detectLocation={detectLocation}
+          detecting={detectingPrefix === "drop"}
+          openMap={triggerMapPin}
+          handlePincodeLookup={handlePincodeLookup}
+          fetchingPincode={fetchingPincodePrefix === "drop"}
         />
       )}
       {step === 3 && (
@@ -460,6 +884,40 @@ export function OrderForm({
         )}
       </div>
     </form>
+    {mapModalOpen && (
+      <div className="map-modal-overlay">
+        <div className="map-modal-content">
+          <div className="map-modal-header">
+            <h3>Pin your {mapPrefix} location</h3>
+            <button type="button" className="map-modal-close-btn" onClick={() => setMapModalOpen(false)}>
+              &times;
+            </button>
+          </div>
+          <div className="map-modal-body">
+            <div id="leaflet-map" style={{ height: "320px", width: "100%", borderRadius: "8px" }} />
+            {mapAddressLoading ? (
+              <p className="map-loading-text">Loading address details...</p>
+            ) : mapSelectedAddress ? (
+              <p className="map-address-summary">{mapSelectedAddress}</p>
+            ) : null}
+          </div>
+          <div className="map-modal-footer">
+            <button type="button" className="button button-secondary" onClick={() => setMapModalOpen(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={confirmMapLocation}
+              disabled={!mapCoords}
+            >
+              Confirm Location
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
@@ -470,6 +928,11 @@ function AddressStep({
   values,
   update,
   updateLocation,
+  detectLocation,
+  detecting,
+  openMap,
+  handlePincodeLookup,
+  fetchingPincode,
 }: {
   prefix: AddressPrefix;
   title: string;
@@ -481,6 +944,11 @@ function AddressStep({
     field: "CountryCode" | "StateCode" | "CityName" | "AreaId",
     value: string,
   ) => void;
+  detectLocation: (prefix: AddressPrefix) => void;
+  detecting: boolean;
+  openMap: (prefix: AddressPrefix) => void;
+  handlePincodeLookup: (prefix: AddressPrefix, pincode: string) => void;
+  fetchingPincode: boolean;
 }) {
   const get = (field: string) =>
     String(values[`${prefix}${field}` as keyof FormValues]);
@@ -510,6 +978,27 @@ function AddressStep({
       <div className="section-heading">
         <span>{prefix === "pickup" ? 1 : 2}</span>
         <div><h2>{title}</h2><p>Select the location, then enter the exact postal address.</p></div>
+      </div>
+      <div className="location-controls-bar">
+        <button
+          type="button"
+          className="button button-secondary button-small flex items-center gap-1"
+          style={{ display: "inline-flex", minHeight: "32px", padding: "6px 12px" }}
+          onClick={() => detectLocation(prefix)}
+          disabled={detecting}
+        >
+          <Locate size={14} />
+          {detecting ? "Detecting location..." : "Use Current Location"}
+        </button>
+        <button
+          type="button"
+          className="button button-secondary button-small flex items-center gap-1"
+          style={{ display: "inline-flex", minHeight: "32px", padding: "6px 12px" }}
+          onClick={() => openMap(prefix)}
+        >
+          <MapPin size={14} />
+          Pin on Map
+        </button>
       </div>
       <div className="form-grid two-column">
         <label>
@@ -563,8 +1052,13 @@ function AddressStep({
           <input value={get("Line2")} onChange={(event) => update(`${prefix}Line2` as keyof FormValues, event.target.value as never)} placeholder="MG Road, near Metro Gate 2" />
         </label>
         <label>
-          Postal code
-          <input value={get("PostalCode")} onChange={(event) => update(`${prefix}PostalCode` as keyof FormValues, event.target.value as never)} autoComplete="postal-code" />
+          Postal code {fetchingPincode && <span className="text-muted text-xs animate-pulse">(fetching...)</span>}
+          <input
+            value={get("PostalCode")}
+            onChange={(event) => update(`${prefix}PostalCode` as keyof FormValues, event.target.value as never)}
+            onBlur={(event) => handlePincodeLookup(prefix, event.target.value)}
+            autoComplete="postal-code"
+          />
         </label>
         <label>
           Contact name

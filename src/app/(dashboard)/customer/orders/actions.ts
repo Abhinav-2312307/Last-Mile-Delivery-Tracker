@@ -144,37 +144,35 @@ export async function createOrder(formData: FormData) {
 
   const input = parsed.data;
 
-  const pickupPromise = input.pickupAreaId === "custom"
-    ? getOrCreateAreaForLocation({
+  const [rateCards, internationalRateCards, codSurcharges] = await Promise.all([
+    prisma.rateCard.findMany({ where: { isActive: true } }),
+    prisma.internationalRateCard.findMany({ where: { isActive: true } }),
+    prisma.codSurcharge.findMany({ where: { isActive: true } }),
+  ]);
+
+  const pickupArea = input.pickupAreaId === "custom"
+    ? await getOrCreateAreaForLocation({
         countryCode: input.pickupCountryCode,
         stateCode: input.pickupStateCode,
         cityName: input.pickupCityName,
         postalCode: input.pickupPostalCode,
       })
-    : prisma.area.findUniqueOrThrow({
+    : await prisma.area.findUniqueOrThrow({
         where: { id: input.pickupAreaId },
         include: { city: { include: { country: true, state: true } } },
       });
 
-  const dropPromise = input.dropAreaId === "custom"
-    ? getOrCreateAreaForLocation({
+  const dropArea = input.dropAreaId === "custom"
+    ? await getOrCreateAreaForLocation({
         countryCode: input.dropCountryCode,
         stateCode: input.dropStateCode,
         cityName: input.dropCityName,
         postalCode: input.dropPostalCode,
       })
-    : prisma.area.findUniqueOrThrow({
+    : await prisma.area.findUniqueOrThrow({
         where: { id: input.dropAreaId },
         include: { city: { include: { country: true, state: true } } },
       });
-
-  const [pickupArea, dropArea, rateCards, internationalRateCards, codSurcharges] = await Promise.all([
-    pickupPromise,
-    dropPromise,
-    prisma.rateCard.findMany({ where: { isActive: true } }),
-    prisma.internationalRateCard.findMany({ where: { isActive: true } }),
-    prisma.codSurcharge.findMany({ where: { isActive: true } }),
-  ]);
 
   const locationMatches = (
     area: typeof pickupArea,
@@ -261,8 +259,8 @@ export async function createOrder(formData: FormData) {
         contactPhone: input.pickupContactPhone,
         userId: session.user.id,
         areaId: pickupArea.id,
-        latitude: pickupArea.latitude,
-        longitude: pickupArea.longitude,
+        latitude: input.pickupLatitude || pickupArea.latitude,
+        longitude: input.pickupLongitude || pickupArea.longitude,
       },
     });
     const dropAddress = await tx.address.create({
@@ -278,8 +276,8 @@ export async function createOrder(formData: FormData) {
         contactPhone: input.dropContactPhone,
         userId: session.user.id,
         areaId: dropArea.id,
-        latitude: dropArea.latitude,
-        longitude: dropArea.longitude,
+        latitude: input.dropLatitude || dropArea.latitude,
+        longitude: input.dropLongitude || dropArea.longitude,
       },
     });
     const created = await tx.order.create({
