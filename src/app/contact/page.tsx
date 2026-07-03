@@ -3,18 +3,27 @@
 import Link from "next/link";
 import { ChevronLeft, Mail, Phone, MapPin, Send } from "lucide-react";
 import { FormEvent, useState } from "react";
+import { sendContactMessage } from "./actions";
 
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false);
   const [pending, setPending] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
-    // Simulate API form submission delay
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    setErrorMsg("");
+
+    const formData = new FormData(event.currentTarget);
+    const result = await sendContactMessage(formData);
+
     setPending(false);
-    setSubmitted(true);
+    if (result.success) {
+      setSubmitted(true);
+    } else {
+      setErrorMsg(result.error || "An error occurred while sending your message. Please try again.");
+    }
   }
 
   return (
@@ -85,6 +94,13 @@ export default function ContactPage() {
             ) : (
               <form onSubmit={submit} className="form-stack">
                 <h3>Send us a message</h3>
+                
+                {errorMsg && (
+                  <div style={{ color: "#dc2626", backgroundColor: "#fee2e2", padding: "0.75rem", borderRadius: "0.375rem", fontSize: "0.875rem", marginBottom: "1rem", border: "1px solid #fecaca" }}>
+                    {errorMsg}
+                  </div>
+                )}
+
                 <label>
                   Your Name
                   <input name="name" type="text" required placeholder="John Doe" />

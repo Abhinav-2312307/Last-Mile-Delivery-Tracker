@@ -16,6 +16,7 @@
   "dependencies": {
     "@auth/prisma-adapter": "latest",
     "@prisma/client": "^6.16.2",
+    "@types/pdfkit": "^0.17.6",
     "bcryptjs": "latest",
     "clsx": "latest",
     "country-state-city": "^3.2.1",
@@ -23,6 +24,7 @@
     "next": "latest",
     "next-auth": "latest",
     "nodemailer": "^7.0.13",
+    "pdfkit": "^0.19.1",
     "prisma": "^6.16.2",
     "razorpay": "latest",
     "react": "latest",

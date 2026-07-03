@@ -42,6 +42,7 @@ export default async function Home({ searchParams }: PageProps) {
           <nav className="landing-nav">
             <Link href="#features">Features</Link>
             <Link href="#track">Track Shipment</Link>
+            <Link href="/contact">Contact</Link>
             <Link href="/terms">Terms</Link>
             <Link href="/privacy">Privacy</Link>
           </nav>

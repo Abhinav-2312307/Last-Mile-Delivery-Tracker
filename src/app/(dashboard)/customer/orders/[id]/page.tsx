@@ -28,7 +28,22 @@ export default async function CustomerOrderPage({
   return (
     <>
       <div className="page-heading">
-        <div><p className="eyebrow">Order detail</p><h1>{order.orderNumber}</h1><p>Created {order.createdAt.toLocaleString("en-IN")}</p></div>
+        <div>
+          <p className="eyebrow">Order detail</p>
+          <h1>{order.orderNumber}</h1>
+          <p>Created {order.createdAt.toLocaleString("en-IN")}</p>
+          {(order.paymentStatus === "PAID" || order.paymentStatus === "NOT_REQUIRED") && (
+            <div style={{ marginTop: "0.5rem" }}>
+              <a
+                href={`/api/orders/${order.id}/invoice`}
+                className="button button-secondary"
+                style={{ display: "inline-block", fontSize: "0.875rem", padding: "0.4rem 0.8rem", textDecoration: "none" }}
+              >
+                📄 Download Invoice (PDF)
+              </a>
+            </div>
+          )}
+        </div>
         <StatusBadge status={order.status} />
       </div>
       <section className="detail-grid">

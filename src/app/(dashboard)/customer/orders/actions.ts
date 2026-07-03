@@ -9,6 +9,7 @@ import { requireSession } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { orderInputSchema } from "@/lib/orders/order-input";
 import { calculateDeliveryCharge } from "@/lib/pricing/rate-engine";
+import { notifyCustomerOfStatus } from "@/lib/notifications/notification-service";
 
 function getCoordinates(countryCode: string, stateCode?: string, cityName?: string) {
   if (cityName && stateCode) {
@@ -329,6 +330,11 @@ export async function createOrder(formData: FormData) {
   });
 
   revalidatePath("/customer");
+  try {
+    await notifyCustomerOfStatus(order.id);
+  } catch (error) {
+    console.error("Failed to notify customer of order creation:", error);
+  }
   redirect(`/customer/orders/${order.id}`);
 }
 
