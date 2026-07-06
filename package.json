@@ -17,6 +17,7 @@
     "@auth/prisma-adapter": "latest",
     "@prisma/client": "^6.16.2",
     "@types/pdfkit": "^0.17.6",
+    "@vercel/analytics": "^2.0.1",
     "bcryptjs": "latest",
     "clsx": "latest",
     "country-state-city": "^3.2.1",
